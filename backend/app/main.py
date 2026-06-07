@@ -1,46 +1,34 @@
+import io
 from fastapi import FastAPI, UploadFile, File
-from app.ml.isolation import detect_anomalies
-import shutil
-import os
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
+from app.ml.isolation_forest import detect_anomalies
 
-app = FastAPI(title="Anomaly Detection Dashboard")
+app = FastAPI()
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def home():
-    return {"message": "API Running"}
-
+    return {"status": "running"}
 
 @app.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
-    filepath = os.path.join(UPLOAD_DIR, file.filename)
+async def upload(file: UploadFile):
+    contents = await file.read()
 
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    df = pd.read_csv(io.BytesIO(contents))
 
-    df = pd.read_csv(filepath)
-
-    numeric_cols = df.select_dtypes(include=["number"]).columns
-
-    if len(numeric_cols) == 0:
-        return {"error": "No numeric columns found"}
-
-    column = "value"
-
-    predictions = detect_anomalies(df[[column]])
-
-    df["prediction"] = predictions
-
-    anomalies = df[df["prediction"] == -1]
+    result = detect_anomalies(df)
 
     return {
-        "filename": file.filename,
-        "rows": len(df),
-        "column_used": column,
-        "anomalies_found": len(anomalies),
-        "anomalies": anomalies.to_dict(orient="records")
+        "filename": file.filename,   # ✅ FIX HERE
+        "rows": result["rows"],
+        "anomalies_found": result["anomalies_found"],
+        "anomalies": result["anomalies"]
     }
